@@ -56,7 +56,14 @@
     .drop.qbeta.has { border-color: var(--qbeta); }
     .drop.gamma.has { border-color: var(--gamma); }
     .drop.over { background: #fff6ea; }
-    .drop input { display: none; }
+    .drop input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
     .drop .kind {
       font-family: ui-sans-serif, system-ui, sans-serif;
       font-size: 0.68rem;
@@ -196,7 +203,7 @@
       flex-direction: column;
       gap: 0.7rem;
     }
-    .plot-wrap img {
+    .plot-wrap img, .plot-wrap canvas {
       width: 100%;
       background: #fff;
       border-radius: 8px;
@@ -229,12 +236,12 @@
       <label class="drop qbeta" id="drop-qbeta">
         <div class="kind">Qβ file</div>
         <div class="fname" id="name-qbeta">drop or click · parent B− XML</div>
-        <input type="file" accept=".xml,text/xml" id="file-qbeta" />
+        <input type="file" accept=".xml,text/xml,application/xml,.txt" id="file-qbeta" />
       </label>
       <label class="drop gamma" id="drop-gamma">
         <div class="kind">γ file</div>
         <div class="fname" id="name-gamma">drop or click · daughter G XML</div>
-        <input type="file" accept=".xml,text/xml" id="file-gamma" />
+        <input type="file" accept=".xml,text/xml,application/xml,.txt" id="file-gamma" />
       </label>
     </div>
     <label class="emax">E<sub>max</sub>
@@ -269,6 +276,7 @@
       </div>
     </section>
   </main>
+  <script src="ladder.js"></script>
   <script>
     const state = { qbeta: null, gamma: null, tab: "qbeta", last: null };
 
@@ -306,22 +314,32 @@
       $("btn-go").disabled = !(state.qbeta && state.gamma);
     }
 
+    function setInspect(kind, rec) {
+      state[kind] = rec;
+      $(kind === "qbeta" ? "drop-qbeta" : "drop-gamma").classList.add("has");
+      $(kind === "qbeta" ? "name-qbeta" : "name-gamma").textContent = rec.name;
+      state.tab = kind;
+      document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === kind));
+      $("inspect-err").hidden = true;
+      renderInspect();
+      setReady();
+    }
+
+    function readAsText(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result || ""));
+        r.onerror = () => reject(r.error || new Error("could not read file"));
+        r.readAsText(file);
+      });
+    }
+
     async function takeFile(kind, file) {
-      const fd = new FormData();
-      fd.append("file", file, file.name);
       try {
-        const r = await fetch("/api/inspect", { method: "POST", body: fd });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || r.statusText);
-        data._file = file;
-        state[kind] = data;
-        $(kind === "qbeta" ? "drop-qbeta" : "drop-gamma").classList.add("has");
-        $(kind === "qbeta" ? "name-qbeta" : "name-gamma").textContent = data.name;
-        state.tab = kind;
-        document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === kind));
-        $("inspect-err").hidden = true;
-        renderInspect();
-        setReady();
+        const text = await readAsText(file);
+        const rec = Ladder.inspectRecord(Ladder.parseNuclide(text, file.name));
+        rec._file = file;
+        setInspect(kind, rec);
       } catch (err) {
         $("inspect-err").hidden = false;
         $("inspect-err").textContent = err.message;
@@ -331,21 +349,11 @@
     async function loadSample() {
       $("inspect-err").hidden = true;
       try {
-        const [q, g] = await Promise.all([
-          fetch("/api/sample/qbeta").then((r) => r.json()),
-          fetch("/api/sample/gamma").then((r) => r.json()),
-        ]);
-        if (q.error) throw new Error(q.error);
-        if (g.error) throw new Error(g.error);
-        state.qbeta = q;
-        state.gamma = g;
-        $("drop-qbeta").classList.add("has");
-        $("drop-gamma").classList.add("has");
-        $("name-qbeta").textContent = q.name;
-        $("name-gamma").textContent = g.name;
-        renderInspect();
-        setReady();
-        await translate({ sample: true });
+        const q = Ladder.inspectRecord(Ladder.parseNuclide(Ladder.SAMPLE_QBETA, "98ZR.xml"));
+        const g = Ladder.inspectRecord(Ladder.parseNuclide(Ladder.SAMPLE_GAMMA, "98NB.xml"));
+        setInspect("qbeta", q);
+        setInspect("gamma", g);
+        await translate();
       } catch (err) {
         $("inspect-err").hidden = false;
         $("inspect-err").textContent = err.message;
@@ -374,16 +382,20 @@
       const chips = (rec.levels || []).map((e) => `<span class="chip">${e} keV</span>`).join("");
       let tables = `<div class="chips">${chips}</div>`;
       if (rec.betas.length) {
-        tables += `<table><caption>β feeds</caption><thead><tr>
+        const rows = rec.betas.slice(0, 250);
+        const more = rec.betas.length > rows.length ? `<tr><td colspan="3">… ${rec.betas.length - rows.length} more</td></tr>` : "";
+        tables += `<table><caption>β feeds (${rec.betas.length})</caption><thead><tr>
           <th>Q (keV)</th><th>to (keV)</th><th>I</th></tr></thead><tbody>` +
-          rec.betas.map((b) => `<tr><td>${fmt(b.q, 5)}</td><td>${fmt(b.to_e, 5)}</td><td>${fmt(b.intensity, 4)}</td></tr>`).join("") +
-          `</tbody></table>`;
+          rows.map((b) => `<tr><td>${fmt(b.q, 5)}</td><td>${fmt(b.to_e, 5)}</td><td>${fmt(b.intensity, 4)}</td></tr>`).join("") +
+          more + `</tbody></table>`;
       }
       if (rec.gammas.length) {
-        tables += `<table><caption>γ transitions</caption><thead><tr>
+        const rows = rec.gammas.slice(0, 250);
+        const more = rec.gammas.length > rows.length ? `<tr><td colspan="4">… ${rec.gammas.length - rows.length} more</td></tr>` : "";
+        tables += `<table><caption>γ transitions (${rec.gammas.length})</caption><thead><tr>
           <th>from</th><th>to</th><th>E<sub>γ</sub></th><th>I</th></tr></thead><tbody>` +
-          rec.gammas.map((g) => `<tr><td>${fmt(g.from_e, 5)}</td><td>${fmt(g.to_e, 5)}</td><td>${fmt(g.q, 5)}</td><td>${fmt(g.intensity, 4)}</td></tr>`).join("") +
-          `</tbody></table>`;
+          rows.map((g) => `<tr><td>${fmt(g.from_e, 5)}</td><td>${fmt(g.to_e, 5)}</td><td>${fmt(g.q, 5)}</td><td>${fmt(g.intensity, 4)}</td></tr>`).join("") +
+          more + `</tbody></table>`;
       }
       tables += `<pre class="xml">${escapeHtml(rec.text || "")}</pre>`;
       body.innerHTML = tables;
@@ -393,32 +405,30 @@
       return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     }
 
-    async function translate(opts = {}) {
-      if (!opts.sample && !(state.qbeta && state.gamma)) return;
+    async function translate() {
+      if (!(state.qbeta && state.gamma)) return;
       const bar = $("plot-bar");
       bar.classList.add("busy");
       $("btn-go").disabled = true;
-      const fd = new FormData();
-      const emax = $("e-max").value.trim();
-      if (emax) fd.append("e_max", emax);
-      if (opts.sample) {
-        fd.append("sample", "1");
-      } else {
-        const qf = state.qbeta._file;
-        const gf = state.gamma._file;
-        if (qf && gf) {
-          fd.append("qbeta", qf, state.qbeta.name);
-          fd.append("gamma", gf, state.gamma.name);
-        } else {
-          fd.append("sample", "1");
-        }
-      }
+      $("plot-wrap").innerHTML = `<div class="placeholder">Building ${state.qbeta.levels.length + state.gamma.levels.length} levels…</div>`;
       try {
-        const r = await fetch("/api/translate", { method: "POST", body: fd });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || r.statusText);
-        state.last = data;
-        renderPlot(data);
+        await new Promise((r) => setTimeout(r, 20));
+        const emaxRaw = $("e-max").value.trim();
+        const emax = emaxRaw ? Number(emaxRaw) : null;
+        const result = Ladder.runTranslation(
+          [state.qbeta._nuclide, state.gamma._nuclide],
+          Number.isFinite(emax) ? emax : null,
+        );
+        const title = state.qbeta.name + " + " + state.gamma.name;
+        const canvas = Ladder.plotLadder(result, title);
+        const npyName = `${state.qbeta.name.replace(/\.xml$/i, "")}_${state.gamma.name.replace(/\.xml$/i, "")}_level_ladder_endpoint_normed.npy`;
+        const npyBlob = Ladder.encodeNpy(result.arr, result.rows, result.cols);
+        result.npy_name = npyName;
+        result.npy_url = URL.createObjectURL(npyBlob);
+        result.png_url = canvas.toDataURL("image/png");
+        result.canvas = canvas;
+        state.last = result;
+        renderPlot(result);
       } catch (err) {
         $("plot-wrap").innerHTML = `<div class="err">${escapeHtml(err.message)}</div>`;
       } finally {
@@ -428,33 +438,40 @@
     }
 
     function renderPlot(data) {
-      const png = "data:image/png;base64," + data.plot_png;
-      const paths = data.paths.map((p) => {
+      const shown = data.paths.length > 80 ? data.paths.slice(0, 80) : data.paths;
+      const extra = data.paths.length > shown.length
+        ? `<tr><td colspan="6">… ${data.paths.length - shown.length} more paths (download npy for the full ladder)</td></tr>`
+        : "";
+      const paths = shown.map((p) => {
         const chain = p.chain.map((e) => Number(e)).join(" → ");
         const ig = (p.gamma_intensities || []).map((x) => fmt(x, 3)).join(", ");
         return `<tr><td>${p.index}</td><td>${fmt(p.weight, 3)}</td><td>${fmt(p.feed, 5)}</td>
           <td>${chain}</td><td>${fmt(p.beta_intensity, 3)}</td><td>${ig || "—"}</td></tr>`;
       }).join("");
-      $("plot-wrap").innerHTML = `
-        <img alt="level ladder" src="${png}" />
+      const note = data.shape[0] > 20
+        ? " · 1D profiles hidden (>20 paths)"
+        : "";
+      const wrap = $("plot-wrap");
+      wrap.innerHTML = `
         <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:0.8rem;color:var(--muted)">
           ${data.shape[0]} paths × ${data.shape[1]} keV
           · Q<sub>β</sub>=${fmt(data.q_beta, 5)} · E<sub>max</sub>=${fmt(data.e_max, 5)}
           · Fermi Z=${data.z_fermi}
-          · z ∈ [${fmt(data.min, 3)}, ${fmt(data.max, 3)}]
+          · z ∈ [${fmt(data.min, 3)}, ${fmt(data.max, 3)}]${note}
         </div>
         <table>
           <caption>decay paths</caption>
           <thead><tr><th>#</th><th>W</th><th>feed</th><th>cascade</th><th>I<sub>β</sub></th><th>I<sub>γ</sub></th></tr></thead>
-          <tbody>${paths}</tbody>
+          <tbody>${paths}${extra}</tbody>
         </table>`;
+      wrap.insertBefore(data.canvas, wrap.firstChild);
       const npy = $("dl-npy");
       const pngA = $("dl-png");
       npy.hidden = false;
       pngA.hidden = false;
-      npy.href = "data:application/octet-stream;base64," + data.npy;
+      npy.href = data.npy_url;
       npy.download = data.npy_name;
-      pngA.href = png;
+      pngA.href = data.png_url;
       pngA.download = data.npy_name.replace(/\.npy$/, ".png");
     }
   </script>

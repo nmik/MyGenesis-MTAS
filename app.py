@@ -134,6 +134,11 @@ def index():
     return send_from_directory(HERE, "index.html")
 
 
+@app.get("/<path:name>")
+def static_file(name):
+    return send_from_directory(HERE, name)
+
+
 @app.get("/api/sample/<kind>")
 def sample(kind):
     path = SAMPLE_QBETA if kind == "qbeta" else SAMPLE_GAMMA if kind == "gamma" else None
