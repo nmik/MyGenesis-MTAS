@@ -2,7 +2,6 @@
 (function (global) {
   const ENERGY_TOL = 1.0;
   const TINY = -1.17549435e-38;
-  const LOG_FLOOR = 1e-8;
   const ALPHA = 1.0 / 137.0;
   const PI = 3.141592653589;
   const ELECTRON_MASS = 511.0;
@@ -298,18 +297,20 @@
     for (let i = 0; i < paths.length; i++) {
       const p = paths[i];
       const w = p.weight;
-      const zG = Math.log10(Math.max(w, LOG_FLOOR)) - Math.log10(LOG_FLOOR);
       const row = arr.subarray(i * nBins, (i + 1) * nBins);
       const chain = p.chain;
       const eX = chain.length ? chain[0] : 0;
+      const ints = p.gamma_intensities || [];
       for (let k = 0; k < chain.length - 1; k++) {
         const frm = chain[k];
         const to = chain[k + 1];
+        const ig = k < ints.length ? ints[k] : 100;
         const lo = Math.min(frm, to);
         const hi = Math.max(frm, to);
         const i0 = Math.max(0, Math.min(nBins, Math.round(lo)));
         const i1 = Math.max(0, Math.min(nBins, Math.round(hi)));
-        for (let j = i0; j < i1; j++) row[j] = zG;
+        const z = w * (ig / 100);
+        for (let j = i0; j < i1; j++) row[j] = z;
       }
       let qVal = p.q_beta_branch;
       if (qVal == null) qVal = Math.max(qBeta - eX, 1);
@@ -384,24 +385,14 @@
     ];
   }
 
-  function colorFor(v, vmin, vmax) {
-    if (v >= 0) {
-      const t = vmax > 0 ? 0.5 + 0.5 * (v / vmax) : 0.5;
-      return lerpColor(t);
-    }
-    const t = vmin < 0 ? 0.5 * (v - vmin) / (0 - vmin) : 0.5;
-    return lerpColor(t);
-  }
-
-  function xOf(v, xmin, xmax, cx, cw) {
-    const span = xmax - xmin || 1;
-    return cx + cw * ((v - xmin) / span);
+  function colorFor(v, lim) {
+    if (!lim) return [255, 255, 191];
+    return lerpColor(0.5 + 0.5 * (v / lim));
   }
 
   function plotLadder(result, title) {
     const { arr, rows, cols, min, max } = result;
-    const vmin = Math.min(min, 0);
-    const vmax = Math.max(max, 0) || 1;
+    const lim = Math.max(Math.abs(min), Math.abs(max), 1e-12);
     const showProfiles = rows <= 20;
     const nCols = rows <= 16 ? 4 : 6;
     const nRows = showProfiles ? Math.ceil(rows / nCols) : 1;
@@ -440,7 +431,7 @@
         const p = ((px + 0.5) / wfW) * rows;
         const ip = Math.min(rows - 1, Math.max(0, Math.floor(p)));
         const v = arr[ip * cols + ie];
-        const [r, g, b] = colorFor(v, vmin, vmax);
+        const [r, g, b] = colorFor(v, lim);
         const o = (py * wfW + px) * 4;
         img.data[o] = r;
         img.data[o + 1] = g;
@@ -449,6 +440,38 @@
       }
     }
     ctx.putImageData(img, x0, y0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, wfW, wfH);
+    ctx.clip();
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 1.2;
+    const pathsMeta = result.paths || [];
+    for (let i = 0; i < rows; i++) {
+      const xa = x0 + (i / rows) * wfW + 0.5;
+      const xb = x0 + ((i + 1) / rows) * wfW - 0.5;
+      let energies = [];
+      const chain = (pathsMeta[i] || {}).chain;
+      if (chain && chain.length) {
+        energies = chain.map((e) => Math.round(e)).filter((e) => e > 0 && e < cols);
+      } else {
+        const row = arr.subarray(i * cols, (i + 1) * cols);
+        for (let ie = 1; ie < cols - 1; ie++) {
+          if (row[ie] === 0 && row[ie - 1] > 0 && row[ie + 1] > 0) energies.push(ie);
+        }
+        let lastPos = -1;
+        for (let ie = 0; ie < cols; ie++) if (row[ie] > 0) lastPos = ie;
+        if (lastPos >= 0) energies.push(lastPos + 1);
+      }
+      for (const e of energies) {
+        const y = y0 + wfH * (1 - e / cols);
+        ctx.beginPath();
+        ctx.moveTo(xa, y);
+        ctx.lineTo(xb, y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
     ctx.strokeStyle = "#c9c0b0";
     ctx.strokeRect(x0, y0, wfW, wfH);
     ctx.fillStyle = "#1c1915";
@@ -473,10 +496,8 @@
     const bx = x0 + wfW + 8;
     for (let py = 0; py < wfH; py++) {
       const t = 1 - py / (wfH - 1);
-      const v = t < 0.5
-        ? vmin + (t / 0.5) * (0 - vmin)
-        : 0 + ((t - 0.5) / 0.5) * (vmax - 0);
-      const [r, g, b] = colorFor(v, vmin, vmax);
+      const v = -lim + 2 * lim * t;
+      const [r, g, b] = colorFor(v, lim);
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(bx, y0 + py, barW, 1);
     }
@@ -484,10 +505,10 @@
     ctx.strokeRect(bx, y0, barW, wfH);
     ctx.fillStyle = "#1c1915";
     ctx.textAlign = "left";
-    ctx.fillText(vmax.toPrecision(3), bx + barW + 4, y0 + 10);
+    ctx.fillText(lim.toPrecision(2), bx + barW + 4, y0 + 10);
     ctx.fillText("0", bx + barW + 4, y0 + wfH / 2);
-    ctx.fillText(vmin.toPrecision(3), bx + barW + 4, y0 + wfH);
-    ctx.fillText("log10(γ W) / −W", bx - 4, y0 - 8);
+    ctx.fillText((-lim).toPrecision(2), bx + barW + 4, y0 + wfH);
+    ctx.fillText("W × Iγ/100", bx - 4, y0 - 8);
 
     if (!showProfiles) return canvas;
 
@@ -506,18 +527,30 @@
       ctx.fillStyle = "#6b6258";
       ctx.textAlign = "left";
       ctx.fillText("path " + (i + 1), cx, cy - 4);
-      const xMid = xOf(0, vmin, vmax, cx, cw);
+      const xMid = cx + cw * ((0 - (-lim)) / (2 * lim));
       ctx.strokeStyle = "#ccc4b6";
       ctx.beginPath();
       ctx.moveTo(xMid, cy);
       ctx.lineTo(xMid, cy + ch);
       ctx.stroke();
+      const chain = ((result.paths || [])[i] || {}).chain || [];
+      ctx.strokeStyle = "#888";
+      ctx.setLineDash([3, 3]);
+      for (const e of chain) {
+        if (e <= 0) continue;
+        const y = cy + ch * (1 - e / cols);
+        ctx.beginPath();
+        ctx.moveTo(cx, y);
+        ctx.lineTo(cx + cw, y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
       ctx.beginPath();
       ctx.strokeStyle = "#1c1915";
       ctx.lineWidth = 1;
       for (let ie = 0; ie < cols; ie += Math.max(1, Math.floor(cols / 400))) {
         const v = arr[i * cols + ie];
-        const x = xOf(v, vmin, vmax, cx, cw);
+        const x = cx + cw * ((v - (-lim)) / (2 * lim));
         const y = cy + ch * (1 - ie / cols);
         if (ie === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
