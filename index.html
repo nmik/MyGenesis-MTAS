@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>xml2input — XML → level ladder</title>
+  <style>
+    :root {
+      --ink: #1c1915;
+      --muted: #6b6258;
+      --paper: #f3eee4;
+      --panel: #fbf8f2;
+      --line: #d9d0c1;
+      --qbeta: #9c2f1a;
+      --gamma: #1f6a62;
+      --accent: #c45c26;
+      --code: #231f1a;
+      --code-fg: #e8e0d0;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+      background: var(--paper);
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 0.85rem 1.2rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      flex-wrap: wrap;
+    }
+    header h1 {
+      font-size: 1.15rem;
+      letter-spacing: 0.02em;
+      margin: 0;
+      font-weight: 600;
+    }
+    header h1 span { color: var(--accent); font-weight: 400; }
+    .drops { display: flex; gap: 0.7rem; flex: 1; min-width: 280px; }
+    .drop {
+      flex: 1;
+      border: 1.5px dashed var(--line);
+      border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+      min-height: 52px;
+      cursor: pointer;
+      background: #fff;
+      position: relative;
+    }
+    .drop.qbeta.has { border-color: var(--qbeta); }
+    .drop.gamma.has { border-color: var(--gamma); }
+    .drop.over { background: #fff6ea; }
+    .drop input { display: none; }
+    .drop .kind {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+    .drop.qbeta .kind { color: var(--qbeta); }
+    .drop.gamma .kind { color: var(--gamma); }
+    .drop .fname {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.82rem;
+      margin-top: 0.15rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .actions { display: flex; gap: 0.45rem; align-items: center; }
+    button, .btn {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.82rem;
+      border: 1px solid var(--ink);
+      background: var(--ink);
+      color: #fbf8f2;
+      padding: 0.45rem 0.8rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--ink);
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    label.emax {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: flex; align-items: center; gap: 0.35rem;
+    }
+    label.emax input {
+      width: 5.2rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.35rem 0.45rem;
+      font: inherit;
+      background: #fff;
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.15fr);
+      min-height: 0;
+    }
+    .pane {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+    }
+    .pane:last-child { border-right: none; }
+    .pane-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+      background: #efe9dc;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .tabs { display: flex; gap: 0.2rem; margin-left: auto; }
+    .tabs button {
+      background: transparent;
+      color: var(--muted);
+      border: none;
+      padding: 0.25rem 0.55rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+    }
+    .tabs button.on { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+    .meta {
+      padding: 0.7rem 0.9rem 0.3rem;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.85rem;
+    }
+    .meta strong { font-weight: 650; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.12rem 0.5rem;
+      background: #fff;
+      font-size: 0.75rem;
+    }
+    .scroll {
+      flex: 1;
+      overflow: auto;
+      padding: 0 0.9rem 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.78rem;
+      margin: 0.4rem 0 0.9rem;
+    }
+    th, td { text-align: left; padding: 0.28rem 0.4rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 550; }
+    caption {
+      text-align: left;
+      font-weight: 650;
+      padding: 0.35rem 0.4rem 0.15rem;
+      caption-side: top;
+    }
+    pre.xml {
+      margin: 0;
+      background: var(--code);
+      color: var(--code-fg);
+      font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+      font-size: 0.72rem;
+      line-height: 1.45;
+      padding: 0.85rem;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .plot-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 0.7rem;
+      background: #e7e1d4;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+    .plot-wrap img {
+      width: 100%;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      display: block;
+    }
+    .placeholder {
+      margin: auto;
+      text-align: center;
+      color: var(--muted);
+      max-width: 22rem;
+      font-size: 1.05rem;
+      line-height: 1.4;
+    }
+    .err { color: var(--qbeta); padding: 0.6rem 0.9rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+    .busy::after { content: " translating…"; color: var(--accent); }
+    a.dl {
+      color: var(--ink);
+      margin-left: auto;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>xml2input <span>XML → level ladder</span></h1>
+    <div class="drops">
+      <label class="drop qbeta" id="drop-qbeta">
+        <div class="kind">Qβ file</div>
+        <div class="fname" id="name-qbeta">drop or click · parent B− XML</div>
+        <input type="file" accept=".xml,text/xml" id="file-qbeta" />
+      </label>
+      <label class="drop gamma" id="drop-gamma">
+        <div class="kind">γ file</div>
+        <div class="fname" id="name-gamma">drop or click · daughter G XML</div>
+        <input type="file" accept=".xml,text/xml" id="file-gamma" />
+      </label>
+    </div>
+    <label class="emax">E<sub>max</sub>
+      <input type="number" id="e-max" placeholder="auto" min="1" step="1" />
+    </label>
+    <div class="actions">
+      <button class="ghost" id="btn-sample" type="button">Load 98Zr example</button>
+      <button id="btn-go" type="button" disabled>Build ladder</button>
+    </div>
+  </header>
+  <main>
+    <section class="pane" id="inspect-pane">
+      <div class="pane-bar">
+        Inspect
+        <div class="tabs">
+          <button type="button" class="on" data-tab="qbeta">Qβ</button>
+          <button type="button" data-tab="gamma">γ</button>
+        </div>
+      </div>
+      <div id="inspect-err" class="err" hidden></div>
+      <div class="meta" id="inspect-meta">Upload a parent Qβ XML and a daughter γ XML to inspect transitions.</div>
+      <div class="scroll" id="inspect-body"></div>
+    </section>
+    <section class="pane">
+      <div class="pane-bar" id="plot-bar">
+        Ladder
+        <a class="dl" id="dl-npy" hidden>download npy</a>
+        <a class="dl" id="dl-png" hidden>download png</a>
+      </div>
+      <div class="plot-wrap" id="plot-wrap">
+        <div class="placeholder">The waterfall and per-path profiles will appear here after translation.</div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const state = { qbeta: null, gamma: null, tab: "qbeta", last: null };
+
+    const $ = (id) => document.getElementById(id);
+    const fileQ = $("file-qbeta");
+    const fileG = $("file-gamma");
+
+    function wireDrop(label, input, kind) {
+      label.addEventListener("dragover", (e) => { e.preventDefault(); label.classList.add("over"); });
+      label.addEventListener("dragleave", () => label.classList.remove("over"));
+      label.addEventListener("drop", (e) => {
+        e.preventDefault();
+        label.classList.remove("over");
+        if (e.dataTransfer.files[0]) takeFile(kind, e.dataTransfer.files[0]);
+      });
+      input.addEventListener("change", () => {
+        if (input.files[0]) takeFile(kind, input.files[0]);
+      });
+    }
+    wireDrop($("drop-qbeta"), fileQ, "qbeta");
+    wireDrop($("drop-gamma"), fileG, "gamma");
+
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.tab = btn.dataset.tab;
+        document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b === btn));
+        renderInspect();
+      });
+    });
+
+    $("btn-sample").addEventListener("click", loadSample);
+    $("btn-go").addEventListener("click", translate);
+
+    function setReady() {
+      $("btn-go").disabled = !(state.qbeta && state.gamma);
+    }
+
+    async function takeFile(kind, file) {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      try {
+        const r = await fetch("/api/inspect", { method: "POST", body: fd });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || r.statusText);
+        data._file = file;
+        state[kind] = data;
+        $(kind === "qbeta" ? "drop-qbeta" : "drop-gamma").classList.add("has");
+        $(kind === "qbeta" ? "name-qbeta" : "name-gamma").textContent = data.name;
+        state.tab = kind;
+        document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === kind));
+        $("inspect-err").hidden = true;
+        renderInspect();
+        setReady();
+      } catch (err) {
+        $("inspect-err").hidden = false;
+        $("inspect-err").textContent = err.message;
+      }
+    }
+
+    async function loadSample() {
+      $("inspect-err").hidden = true;
+      try {
+        const [q, g] = await Promise.all([
+          fetch("/api/sample/qbeta").then((r) => r.json()),
+          fetch("/api/sample/gamma").then((r) => r.json()),
+        ]);
+        if (q.error) throw new Error(q.error);
+        if (g.error) throw new Error(g.error);
+        state.qbeta = q;
+        state.gamma = g;
+        $("drop-qbeta").classList.add("has");
+        $("drop-gamma").classList.add("has");
+        $("name-qbeta").textContent = q.name;
+        $("name-gamma").textContent = g.name;
+        renderInspect();
+        setReady();
+        await translate({ sample: true });
+      } catch (err) {
+        $("inspect-err").hidden = false;
+        $("inspect-err").textContent = err.message;
+      }
+    }
+
+    function fmt(n, d = 3) {
+      if (n == null || Number.isNaN(n)) return "—";
+      return Number(n).toPrecision ? Number(n).toPrecision(d).replace(/\.0+$/, "") : n;
+    }
+
+    function renderInspect() {
+      const rec = state[state.tab];
+      const meta = $("inspect-meta");
+      const body = $("inspect-body");
+      if (!rec) {
+        meta.textContent = state.tab === "qbeta"
+          ? "No Qβ file loaded yet."
+          : "No γ file loaded yet.";
+        body.innerHTML = "";
+        return;
+      }
+      const kind = rec.betas.length ? "Qβ parent" : "γ daughter";
+      meta.innerHTML = `<strong>${rec.name}</strong> · ${kind} · A=${rec.a} Z=${rec.z}` +
+        (rec.q_beta ? ` · Q<sub>β</sub>=${rec.q_beta} keV` : "");
+      const chips = (rec.levels || []).map((e) => `<span class="chip">${e} keV</span>`).join("");
+      let tables = `<div class="chips">${chips}</div>`;
+      if (rec.betas.length) {
+        tables += `<table><caption>β feeds</caption><thead><tr>
+          <th>Q (keV)</th><th>to (keV)</th><th>I</th></tr></thead><tbody>` +
+          rec.betas.map((b) => `<tr><td>${fmt(b.q, 5)}</td><td>${fmt(b.to_e, 5)}</td><td>${fmt(b.intensity, 4)}</td></tr>`).join("") +
+          `</tbody></table>`;
+      }
+      if (rec.gammas.length) {
+        tables += `<table><caption>γ transitions</caption><thead><tr>
+          <th>from</th><th>to</th><th>E<sub>γ</sub></th><th>I</th></tr></thead><tbody>` +
+          rec.gammas.map((g) => `<tr><td>${fmt(g.from_e, 5)}</td><td>${fmt(g.to_e, 5)}</td><td>${fmt(g.q, 5)}</td><td>${fmt(g.intensity, 4)}</td></tr>`).join("") +
+          `</tbody></table>`;
+      }
+      tables += `<pre class="xml">${escapeHtml(rec.text || "")}</pre>`;
+      body.innerHTML = tables;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+
+    async function translate(opts = {}) {
+      if (!opts.sample && !(state.qbeta && state.gamma)) return;
+      const bar = $("plot-bar");
+      bar.classList.add("busy");
+      $("btn-go").disabled = true;
+      const fd = new FormData();
+      const emax = $("e-max").value.trim();
+      if (emax) fd.append("e_max", emax);
+      if (opts.sample) {
+        fd.append("sample", "1");
+      } else {
+        const qf = state.qbeta._file;
+        const gf = state.gamma._file;
+        if (qf && gf) {
+          fd.append("qbeta", qf, state.qbeta.name);
+          fd.append("gamma", gf, state.gamma.name);
+        } else {
+          fd.append("sample", "1");
+        }
+      }
+      try {
+        const r = await fetch("/api/translate", { method: "POST", body: fd });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || r.statusText);
+        state.last = data;
+        renderPlot(data);
+      } catch (err) {
+        $("plot-wrap").innerHTML = `<div class="err">${escapeHtml(err.message)}</div>`;
+      } finally {
+        bar.classList.remove("busy");
+        setReady();
+      }
+    }
+
+    function renderPlot(data) {
+      const png = "data:image/png;base64," + data.plot_png;
+      const paths = data.paths.map((p) => {
+        const chain = p.chain.map((e) => Number(e)).join(" → ");
+        const ig = (p.gamma_intensities || []).map((x) => fmt(x, 3)).join(", ");
+        return `<tr><td>${p.index}</td><td>${fmt(p.weight, 3)}</td><td>${fmt(p.feed, 5)}</td>
+          <td>${chain}</td><td>${fmt(p.beta_intensity, 3)}</td><td>${ig || "—"}</td></tr>`;
+      }).join("");
+      $("plot-wrap").innerHTML = `
+        <img alt="level ladder" src="${png}" />
+        <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:0.8rem;color:var(--muted)">
+          ${data.shape[0]} paths × ${data.shape[1]} keV
+          · Q<sub>β</sub>=${fmt(data.q_beta, 5)} · E<sub>max</sub>=${fmt(data.e_max, 5)}
+          · Fermi Z=${data.z_fermi}
+          · z ∈ [${fmt(data.min, 3)}, ${fmt(data.max, 3)}]
+        </div>
+        <table>
+          <caption>decay paths</caption>
+          <thead><tr><th>#</th><th>W</th><th>feed</th><th>cascade</th><th>I<sub>β</sub></th><th>I<sub>γ</sub></th></tr></thead>
+          <tbody>${paths}</tbody>
+        </table>`;
+      const npy = $("dl-npy");
+      const pngA = $("dl-png");
+      npy.hidden = false;
+      pngA.hidden = false;
+      npy.href = "data:application/octet-stream;base64," + data.npy;
+      npy.download = data.npy_name;
+      pngA.href = png;
+      pngA.download = data.npy_name.replace(/\.npy$/, ".png");
+    }
+  </script>
+</body>
+</html>

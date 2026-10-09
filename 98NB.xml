@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<Nuclide AtomicNumber="41" AtomicMass="98" QBeta="0">
+	<Level Energy="0.00" Spin="1.00" Parity="+" SpinParity="1+" HalfLifeTime="0.000000000" TimeUnit="S" Origin="Database">
+		<Transition Type="Fake" TransitionQValue="0.00" Intensity="100.0000" Origin="Added">
+			<TargetLevel Energy="0.00" AtomicNumber="0" AtomicMass="0" />
+		</Transition>
+	</Level>
+	<Level Energy="350.00" Spin="-1.00" Parity="" HalfLifeTime="0.000000000" TimeUnit="S" Origin="Added">
+		<Transition Type="G" TransitionQValue="350.00" Intensity="100.0000" Origin="Added">
+			<TargetLevel Energy="0.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+	</Level>
+	<Level Energy="800.00" Spin="-1.00" Parity="" HalfLifeTime="0.000000000" TimeUnit="S" Origin="Added">
+		<Transition Type="G" TransitionQValue="800.00" Intensity="84.8912" Origin="Added">
+			<TargetLevel Energy="0.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+		<Transition Type="G" TransitionQValue="450.00" Intensity="15.1088" Origin="Added">
+			<TargetLevel Energy="350.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+	</Level>
+	<Level Energy="1500.00" Spin="-1.00" Parity="" HalfLifeTime="0.000000000" TimeUnit="S" Origin="Added">
+		<Transition Type="G" TransitionQValue="1500.00" Intensity="90.7746" Origin="Added">
+			<TargetLevel Energy="0.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+		<Transition Type="G" TransitionQValue="700.00" Intensity="9.2254" Origin="Added">
+			<TargetLevel Energy="800.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+	</Level>
+	<Level Energy="1600.00" Spin="-1.00" Parity="" HalfLifeTime="0.000000000" TimeUnit="S" Origin="Added">
+		<Transition Type="G" TransitionQValue="1600.00" Intensity="53.7533" Origin="Added">
+			<TargetLevel Energy="0.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+		<Transition Type="G" TransitionQValue="1250.00" Intensity="32.8084" Origin="Added">
+			<TargetLevel Energy="350.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+		<Transition Type="G" TransitionQValue="800.00" Intensity="13.4383" Origin="Added">
+			<TargetLevel Energy="800.00" AtomicNumber="41" AtomicMass="98" />
+		</Transition>
+	</Level>
+</Nuclide>
