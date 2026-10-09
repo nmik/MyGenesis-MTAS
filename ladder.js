@@ -390,30 +390,82 @@
     return lerpColor(0.5 + 0.5 * (v / lim));
   }
 
-  function plotLadder(result, title) {
-    const { arr, rows, cols, min, max } = result;
-    const lim = Math.max(Math.abs(min), Math.abs(max), 1e-12);
-    const showProfiles = rows <= 20;
-    const nCols = rows <= 16 ? 4 : 6;
-    const nRows = showProfiles ? Math.ceil(rows / nCols) : 1;
-    const leftPad = 52;
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  function normalizeView(result, view) {
+    const rows = result.rows;
+    const cols = result.cols;
+    const v = view || {};
+    let p0 = Math.floor(v.p0 != null ? v.p0 : 0);
+    let p1 = Math.ceil(v.p1 != null ? v.p1 : rows);
+    let e0 = v.e0 != null ? v.e0 : 0;
+    let e1 = v.e1 != null ? v.e1 : cols;
+    if (p1 < p0) { const t = p0; p0 = p1; p1 = t; }
+    if (e1 < e0) { const t = e0; e0 = e1; e1 = t; }
+    p0 = clamp(p0, 0, Math.max(0, rows - 1));
+    p1 = clamp(p1, p0 + 1, rows);
+    e0 = clamp(e0, 0, cols);
+    e1 = clamp(e1, 0, cols);
+    if (e1 - e0 < 1) e1 = Math.min(cols, e0 + 1);
+    if (e1 <= e0) { e0 = Math.max(0, e1 - 1); }
+    return { p0, p1, e0, e1 };
+  }
+
+  function limForView(result, view) {
+    const { arr, cols } = result;
+    let mn = Infinity;
+    let mx = -Infinity;
+    const i0 = Math.max(0, Math.floor(view.e0));
+    const i1 = Math.min(cols, Math.ceil(view.e1));
+    for (let p = view.p0; p < view.p1; p++) {
+      const off = p * cols;
+      for (let ie = i0; ie < i1; ie++) {
+        const val = arr[off + ie];
+        if (val < mn) mn = val;
+        if (val > mx) mx = val;
+      }
+    }
+    if (!Number.isFinite(mn)) return 1e-12;
+    return Math.max(Math.abs(mn), Math.abs(mx), 1e-12);
+  }
+
+  function niceTicks(a, b, n) {
+    const span = b - a;
+    if (!(span > 0)) return [a];
+    const raw = span / Math.max(n, 1);
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const err = raw / pow;
+    const step = err >= 7 ? 10 * pow : err >= 3 ? 5 * pow : err >= 1.5 ? 2 * pow : pow;
+    const t0 = Math.ceil((a - step * 1e-9) / step) * step;
+    const ticks = [];
+    for (let t = t0; t <= b + step * 1e-6; t += step) ticks.push(t);
+    return ticks;
+  }
+
+  function plotLadder(result, title, viewOpt) {
+    const { arr, rows, cols } = result;
+    const view = normalizeView(result, viewOpt);
+    const lim = limForView(result, view);
+    const nP = view.p1 - view.p0;
+    const nE = view.e1 - view.e0;
+    const showProfiles = nP <= 20;
+    const nCols = nP <= 16 ? 4 : 6;
+    const nRows = showProfiles ? Math.ceil(nP / nCols) : 1;
+    const leftPad = 58;
     const barW = 18;
     const top = 36;
     const bot = 48;
-    const wfH = 520;
-    const wfW = showProfiles
-      ? 420 - leftPad - barW - 28
-      : Math.min(1400, Math.max(640, Math.round(8 * rows)));
+    const wfH = 420;
+    const wfW = Math.min(1100, Math.max(520, Math.round(36 * nP)));
     const leftW = leftPad + wfW + barW + 70;
-    const rightW = showProfiles ? 720 : 0;
-    const profH = showProfiles ? Math.max(220, nRows * 88) : wfH;
-    const h = top + Math.max(wfH, profH) + bot;
-    const w = 16 + leftW + (showProfiles ? 16 + rightW : 0) + 16;
+    const w = Math.max(16 + leftW + 16, showProfiles ? 780 : 16 + leftW + 16);
+    const profH = showProfiles ? Math.max(200, nRows * 96) : 0;
+    const h = top + wfH + (showProfiles ? 16 + profH : 0) + bot;
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
-    canvas.style.width = "100%";
-    canvas.style.height = "auto";
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, w, h);
@@ -422,13 +474,13 @@
     ctx.fillText(title || "level ladder", 16, 22);
 
     const x0 = 16 + leftPad;
-    const y0 = top + (h - top - bot - wfH) / 2;
+    const y0 = top;
     const img = ctx.createImageData(wfW, wfH);
     for (let py = 0; py < wfH; py++) {
-      const e = ((wfH - 1 - py) / (wfH - 1)) * cols;
+      const e = view.e0 + ((wfH - 1 - py) / (wfH - 1)) * nE;
       const ie = Math.min(cols - 1, Math.max(0, Math.floor(e)));
       for (let px = 0; px < wfW; px++) {
-        const p = ((px + 0.5) / wfW) * rows;
+        const p = view.p0 + ((px + 0.5) / wfW) * nP;
         const ip = Math.min(rows - 1, Math.max(0, Math.floor(p)));
         const v = arr[ip * cols + ie];
         const [r, g, b] = colorFor(v, lim);
@@ -447,9 +499,9 @@
     ctx.strokeStyle = "#111111";
     ctx.lineWidth = 1.2;
     const pathsMeta = result.paths || [];
-    for (let i = 0; i < rows; i++) {
-      const xa = x0 + (i / rows) * wfW + 0.5;
-      const xb = x0 + ((i + 1) / rows) * wfW - 0.5;
+    for (let i = view.p0; i < view.p1; i++) {
+      const xa = x0 + ((i - view.p0) / nP) * wfW + 0.5;
+      const xb = x0 + ((i + 1 - view.p0) / nP) * wfW - 0.5;
       let energies = [];
       const chain = (pathsMeta[i] || {}).chain;
       if (chain && chain.length) {
@@ -464,7 +516,8 @@
         if (lastPos >= 0) energies.push(lastPos + 1);
       }
       for (const e of energies) {
-        const y = y0 + wfH * (1 - e / cols);
+        if (e < view.e0 || e > view.e1) continue;
+        const y = y0 + wfH * (1 - (e - view.e0) / nE);
         ctx.beginPath();
         ctx.moveTo(xa, y);
         ctx.lineTo(xb, y);
@@ -476,8 +529,10 @@
     ctx.strokeRect(x0, y0, wfW, wfH);
     ctx.fillStyle = "#1c1915";
     ctx.textAlign = "right";
-    ctx.fillText("0", x0 - 6, y0 + wfH);
-    ctx.fillText(String(cols), x0 - 6, y0 + 10);
+    for (const tick of niceTicks(view.e0, view.e1, 5)) {
+      const y = y0 + wfH * (1 - (tick - view.e0) / nE);
+      ctx.fillText(String(Math.round(tick)), x0 - 6, y + 4);
+    }
     ctx.save();
     ctx.translate(18, y0 + wfH / 2);
     ctx.rotate(-Math.PI / 2);
@@ -486,9 +541,9 @@
     ctx.restore();
     ctx.textAlign = "center";
     ctx.fillText("Path", x0 + wfW / 2, y0 + wfH + 28);
-    if (rows <= 24) {
-      for (let i = 0; i < rows; i++) {
-        const x = x0 + ((i + 0.5) / rows) * wfW;
+    if (nP <= 24) {
+      for (let i = view.p0; i < view.p1; i++) {
+        const x = x0 + ((i - view.p0 + 0.5) / nP) * wfW;
         ctx.fillText(String(i + 1), x, y0 + wfH + 14);
       }
     }
@@ -505,61 +560,211 @@
     ctx.strokeRect(bx, y0, barW, wfH);
     ctx.fillStyle = "#1c1915";
     ctx.textAlign = "left";
-    ctx.fillText(lim.toPrecision(2), bx + barW + 4, y0 + 10);
+    ctx.fillText(lim.toPrecision(3), bx + barW + 4, y0 + 10);
     ctx.fillText("0", bx + barW + 4, y0 + wfH / 2);
-    ctx.fillText((-lim).toPrecision(2), bx + barW + 4, y0 + wfH);
+    ctx.fillText((-lim).toPrecision(3), bx + barW + 4, y0 + wfH);
     ctx.fillText("W × Iγ/100", bx - 4, y0 - 8);
 
-    if (!showProfiles) return canvas;
-
-    const rx = 16 + leftW + 16;
-    const cellW = rightW / nCols;
-    const cellH = (h - top - bot) / nRows;
-    for (let i = 0; i < rows; i++) {
-      const r = Math.floor(i / nCols);
-      const c = i % nCols;
-      const cx = rx + c * cellW + 8;
-      const cy = top + r * cellH + 16;
-      const cw = cellW - 16;
-      const ch = cellH - 28;
-      ctx.strokeStyle = "#ddd4c6";
-      ctx.strokeRect(cx, cy, cw, ch);
-      ctx.fillStyle = "#6b6258";
-      ctx.textAlign = "left";
-      ctx.fillText("path " + (i + 1), cx, cy - 4);
-      const xMid = cx + cw * ((0 - (-lim)) / (2 * lim));
-      ctx.strokeStyle = "#ccc4b6";
-      ctx.beginPath();
-      ctx.moveTo(xMid, cy);
-      ctx.lineTo(xMid, cy + ch);
-      ctx.stroke();
-      const chain = ((result.paths || [])[i] || {}).chain || [];
-      ctx.strokeStyle = "#888";
-      ctx.setLineDash([3, 3]);
-      for (const e of chain) {
-        if (e <= 0) continue;
-        const y = cy + ch * (1 - e / cols);
+    if (showProfiles) {
+      const rx = 16;
+      const rightW = w - 32;
+      const cellW = rightW / nCols;
+      const cellH = profH / nRows;
+      const profTop = y0 + wfH + 28;
+      const iE0 = Math.max(0, Math.floor(view.e0));
+      const iE1 = Math.min(cols, Math.ceil(view.e1));
+      const step = Math.max(1, Math.floor((iE1 - iE0) / 400));
+      for (let k = 0; k < nP; k++) {
+        const i = view.p0 + k;
+        const r = Math.floor(k / nCols);
+        const c = k % nCols;
+        const cx = rx + c * cellW + 8;
+        const cy = profTop + r * cellH + 16;
+        const cw = cellW - 16;
+        const ch = cellH - 28;
+        ctx.strokeStyle = "#ddd4c6";
+        ctx.strokeRect(cx, cy, cw, ch);
+        ctx.fillStyle = "#6b6258";
+        ctx.textAlign = "left";
+        ctx.fillText("path " + (i + 1), cx, cy - 4);
+        const xMid = cx + cw * 0.5;
+        ctx.strokeStyle = "#ccc4b6";
         ctx.beginPath();
-        ctx.moveTo(cx, y);
-        ctx.lineTo(cx + cw, y);
+        ctx.moveTo(xMid, cy);
+        ctx.lineTo(xMid, cy + ch);
         ctx.stroke();
+        const chain = ((result.paths || [])[i] || {}).chain || [];
+        ctx.strokeStyle = "#888";
+        ctx.setLineDash([3, 3]);
+        for (const e of chain) {
+          if (e < view.e0 || e > view.e1) continue;
+          const y = cy + ch * (1 - (e - view.e0) / nE);
+          ctx.beginPath();
+          ctx.moveTo(cx, y);
+          ctx.lineTo(cx + cw, y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.strokeStyle = "#1c1915";
+        ctx.lineWidth = 1;
+        let started = false;
+        for (let ie = iE0; ie < iE1; ie += step) {
+          const v = arr[i * cols + ie];
+          const x = cx + cw * ((v - (-lim)) / (2 * lim));
+          const y = cy + ch * (1 - (ie - view.e0) / nE);
+          if (!started) { ctx.moveTo(x, y); started = true; }
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.lineWidth = 1;
       }
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.strokeStyle = "#1c1915";
-      ctx.lineWidth = 1;
-      for (let ie = 0; ie < cols; ie += Math.max(1, Math.floor(cols / 400))) {
-        const v = arr[i * cols + ie];
-        const x = cx + cw * ((v - (-lim)) / (2 * lim));
-        const y = cy + ch * (1 - ie / cols);
-        if (ie === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.lineWidth = 1;
     }
 
-    return canvas;
+    return {
+      canvas,
+      layout: { x0, y0, wfW, wfH, w, h },
+      view,
+      lim,
+    };
+  }
+
+  function mountInteractiveLadder(host, result, title, opts) {
+    if (host._ladderAbort) host._ladderAbort.abort();
+    const ac = new AbortController();
+    const signal = ac.signal;
+    host._ladderAbort = ac;
+    host.innerHTML = "";
+    const plotCanvas = document.createElement("canvas");
+    const overlay = document.createElement("canvas");
+    overlay.className = "overlay";
+    overlay.setAttribute("aria-label", "level-ladder zoom");
+    host.appendChild(plotCanvas);
+    host.appendChild(overlay);
+
+    let view = normalizeView(result, (opts && opts.view) || null);
+    let layout = null;
+    let drag = null;
+
+    function redraw() {
+      const drawn = plotLadder(result, title, view);
+      const src = drawn.canvas;
+      plotCanvas.width = src.width;
+      plotCanvas.height = src.height;
+      plotCanvas.getContext("2d").drawImage(src, 0, 0);
+      overlay.width = src.width;
+      overlay.height = src.height;
+      layout = drawn.layout;
+      view = drawn.view;
+      if (opts && opts.onRedraw) {
+        opts.onRedraw({ view, lim: drawn.lim, canvas: plotCanvas });
+      }
+    }
+
+    function toCanvas(ev) {
+      const r = overlay.getBoundingClientRect();
+      return {
+        x: (ev.clientX - r.left) * (overlay.width / Math.max(r.width, 1)),
+        y: (ev.clientY - r.top) * (overlay.height / Math.max(r.height, 1)),
+      };
+    }
+
+    function inWf(p) {
+      if (!layout) return false;
+      return p.x >= layout.x0 && p.x <= layout.x0 + layout.wfW &&
+        p.y >= layout.y0 && p.y <= layout.y0 + layout.wfH;
+    }
+
+    function xyToData(p) {
+      const nP = view.p1 - view.p0;
+      const nE = view.e1 - view.e0;
+      return {
+        path: view.p0 + ((p.x - layout.x0) / layout.wfW) * nP,
+        e: view.e0 + (1 - (p.y - layout.y0) / layout.wfH) * nE,
+      };
+    }
+
+    function clearOverlay() {
+      overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    overlay.addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0) return;
+      const p = toCanvas(ev);
+      if (!inWf(p)) return;
+      drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+      ev.preventDefault();
+    }, { signal });
+
+    window.addEventListener("mousemove", (ev) => {
+      if (!drag) return;
+      const p = toCanvas(ev);
+      drag.x1 = p.x;
+      drag.y1 = p.y;
+      const ctx = overlay.getContext("2d");
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      const x = Math.min(drag.x0, drag.x1);
+      const y = Math.min(drag.y0, drag.y1);
+      const bw = Math.abs(drag.x1 - drag.x0);
+      const bh = Math.abs(drag.y1 - drag.y0);
+      ctx.fillStyle = "rgba(196,92,38,0.12)";
+      ctx.fillRect(x, y, bw, bh);
+      ctx.strokeStyle = "#c45c26";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(x, y, bw, bh);
+    }, { signal });
+
+    window.addEventListener("mouseup", () => {
+      if (!drag) return;
+      const box = drag;
+      drag = null;
+      clearOverlay();
+      if (Math.abs(box.x1 - box.x0) < 8 || Math.abs(box.y1 - box.y0) < 8) return;
+      const a = xyToData({ x: Math.min(box.x0, box.x1), y: Math.min(box.y0, box.y1) });
+      const b = xyToData({ x: Math.max(box.x0, box.x1), y: Math.max(box.y0, box.y1) });
+      view = normalizeView(result, {
+        p0: Math.min(a.path, b.path),
+        p1: Math.max(a.path, b.path),
+        e0: Math.min(a.e, b.e),
+        e1: Math.max(a.e, b.e),
+      });
+      redraw();
+    }, { signal });
+
+    overlay.addEventListener("dblclick", () => {
+      view = normalizeView(result, null);
+      redraw();
+    }, { signal });
+
+    overlay.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      const p = toCanvas(ev);
+      if (!inWf(p)) return;
+      const d = xyToData(p);
+      const factor = ev.deltaY > 0 ? 1.25 : 0.8;
+      const nP = view.p1 - view.p0;
+      const nE = view.e1 - view.e0;
+      const newNE = Math.max(1, nE * factor);
+      const newNP = Math.max(1, nP * factor);
+      const fx = clamp((d.path - view.p0) / nP, 0, 1);
+      const fy = clamp((d.e - view.e0) / nE, 0, 1);
+      view = normalizeView(result, {
+        p0: d.path - fx * newNP,
+        p1: d.path + (1 - fx) * newNP,
+        e0: d.e - fy * newNE,
+        e1: d.e + (1 - fy) * newNE,
+      });
+      redraw();
+    }, { signal, passive: false });
+
+    redraw();
+    return {
+      reset() { view = normalizeView(result, null); redraw(); },
+      getView() { return { ...view }; },
+      canvas: plotCanvas,
+      abort() { ac.abort(); },
+    };
   }
 
   function encodeNpy(arr, rows, cols) {
@@ -663,6 +868,7 @@
     parseNuclide,
     runTranslation,
     plotLadder,
+    mountInteractiveLadder,
     encodeNpy,
     inspectRecord,
     SAMPLE_QBETA,

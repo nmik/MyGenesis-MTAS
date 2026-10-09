@@ -210,6 +210,45 @@
       border: 1px solid var(--line);
       display: block;
     }
+    .plot-tools {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .plot-tools button {
+      padding: 0.28rem 0.6rem;
+      font-size: 0.75rem;
+    }
+    .plot-stage {
+      position: relative;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      line-height: 0;
+    }
+    .plot-stage canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border: none;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .plot-wrap .plot-stage {
+      min-height: 280px;
+    }
+    .plot-stage canvas.overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      background: transparent;
+    }
     .placeholder {
       margin: auto;
       text-align: center;
@@ -276,7 +315,7 @@
       </div>
     </section>
   </main>
-  <script src="ladder.js"></script>
+  <script src="ladder.js?v=zoom2"></script>
   <script>
     const state = { qbeta: null, gamma: null, tab: "qbeta", last: null };
 
@@ -420,13 +459,12 @@
           Number.isFinite(emax) ? emax : null,
         );
         const title = state.qbeta.name + " + " + state.gamma.name;
-        const canvas = Ladder.plotLadder(result, title);
         const npyName = `${state.qbeta.name.replace(/\.xml$/i, "")}_${state.gamma.name.replace(/\.xml$/i, "")}_level_ladder_endpoint_normed.npy`;
         const npyBlob = Ladder.encodeNpy(result.arr, result.rows, result.cols);
+        result.title = title;
         result.npy_name = npyName;
         result.npy_url = URL.createObjectURL(npyBlob);
-        result.png_url = canvas.toDataURL("image/png");
-        result.canvas = canvas;
+        if (state.last && state.last._interactive) state.last._interactive.abort();
         state.last = result;
         renderPlot(result);
       } catch (err) {
@@ -448,31 +486,49 @@
         return `<tr><td>${p.index}</td><td>${fmt(p.weight, 3)}</td><td>${fmt(p.feed, 5)}</td>
           <td>${chain}</td><td>${fmt(p.beta_intensity, 3)}</td><td>${ig || "—"}</td></tr>`;
       }).join("");
-      const note = data.shape[0] > 20
-        ? " · 1D profiles hidden (>20 paths)"
-        : "";
       const wrap = $("plot-wrap");
       wrap.innerHTML = `
-        <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:0.8rem;color:var(--muted)">
-          ${data.shape[0]} paths × ${data.shape[1]} keV
-          · Q<sub>β</sub>=${fmt(data.q_beta, 5)} · E<sub>max</sub>=${fmt(data.e_max, 5)}
-          · Fermi Z=${data.z_fermi}
-          · z ∈ [${fmt(data.min, 3)}, ${fmt(data.max, 3)}]${note}
+        <div class="plot-tools">
+          <button type="button" class="ghost" id="btn-reset-view">Reset view</button>
+          <span>drag on the waterfall to zoom · scroll to zoom · double-click to reset</span>
+          <span id="view-label"></span>
         </div>
+        <div class="plot-stage" id="plot-stage"></div>
+        <div id="plot-status" style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:0.8rem;color:var(--muted)"></div>
         <table>
           <caption>decay paths</caption>
           <thead><tr><th>#</th><th>W</th><th>feed</th><th>cascade</th><th>I<sub>β</sub></th><th>I<sub>γ</sub></th></tr></thead>
           <tbody>${paths}${extra}</tbody>
         </table>`;
-      wrap.insertBefore(data.canvas, wrap.firstChild);
       const npy = $("dl-npy");
       const pngA = $("dl-png");
       npy.hidden = false;
       pngA.hidden = false;
       npy.href = data.npy_url;
       npy.download = data.npy_name;
-      pngA.href = data.png_url;
       pngA.download = data.npy_name.replace(/\.npy$/, ".png");
+      data._interactive = Ladder.mountInteractiveLadder(
+        $("plot-stage"),
+        data,
+        data.title,
+        {
+          onRedraw({ view, lim, canvas }) {
+            const nVis = view.p1 - view.p0;
+            $("view-label").textContent =
+              `paths ${view.p0 + 1}–${view.p1} · ${Math.round(view.e0)}–${Math.round(view.e1)} keV · colorbar ±${Number(lim).toPrecision(3)}`;
+            $("plot-status").innerHTML =
+              `${data.shape[0]} paths × ${data.shape[1]} keV` +
+              ` · Q<sub>β</sub>=${fmt(data.q_beta, 5)} · E<sub>max</sub>=${fmt(data.e_max, 5)}` +
+              ` · Fermi Z=${data.z_fermi}` +
+              ` · visible z ∈ [−${fmt(lim, 3)}, +${fmt(lim, 3)}]` +
+              (nVis > 20 ? " · 1D profiles hidden (>20 visible paths)" : "");
+            if (data.png_url && data.png_url.startsWith("blob:")) URL.revokeObjectURL(data.png_url);
+            data.png_url = canvas.toDataURL("image/png");
+            pngA.href = data.png_url;
+          },
+        },
+      );
+      $("btn-reset-view").addEventListener("click", () => data._interactive.reset());
     }
   </script>
 </body>
