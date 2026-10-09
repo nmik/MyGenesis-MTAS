@@ -2,6 +2,7 @@
 (function (global) {
   const ENERGY_TOL = 1.0;
   const TINY = -1.17549435e-38;
+  const LOG_FLOOR = 1e-8;
   const ALPHA = 1.0 / 137.0;
   const PI = 3.141592653589;
   const ELECTRON_MASS = 511.0;
@@ -297,6 +298,7 @@
     for (let i = 0; i < paths.length; i++) {
       const p = paths[i];
       const w = p.weight;
+      const zG = Math.log10(Math.max(w, LOG_FLOOR)) - Math.log10(LOG_FLOOR);
       const row = arr.subarray(i * nBins, (i + 1) * nBins);
       const chain = p.chain;
       const eX = chain.length ? chain[0] : 0;
@@ -307,7 +309,7 @@
         const hi = Math.max(frm, to);
         const i0 = Math.max(0, Math.min(nBins, Math.round(lo)));
         const i1 = Math.max(0, Math.min(nBins, Math.round(hi)));
-        for (let j = i0; j < i1; j++) row[j] = w;
+        for (let j = i0; j < i1; j++) row[j] = zG;
       }
       let qVal = p.q_beta_branch;
       if (qVal == null) qVal = Math.max(qBeta - eX, 1);
@@ -382,14 +384,24 @@
     ];
   }
 
-  function colorFor(v, lim) {
-    if (!lim) return [255, 255, 191];
-    return lerpColor(0.5 + 0.5 * (v / lim));
+  function colorFor(v, vmin, vmax) {
+    if (v >= 0) {
+      const t = vmax > 0 ? 0.5 + 0.5 * (v / vmax) : 0.5;
+      return lerpColor(t);
+    }
+    const t = vmin < 0 ? 0.5 * (v - vmin) / (0 - vmin) : 0.5;
+    return lerpColor(t);
+  }
+
+  function xOf(v, xmin, xmax, cx, cw) {
+    const span = xmax - xmin || 1;
+    return cx + cw * ((v - xmin) / span);
   }
 
   function plotLadder(result, title) {
     const { arr, rows, cols, min, max } = result;
-    const lim = Math.max(Math.abs(min), Math.abs(max), 1e-12);
+    const vmin = Math.min(min, 0);
+    const vmax = Math.max(max, 0) || 1;
     const showProfiles = rows <= 20;
     const nCols = rows <= 16 ? 4 : 6;
     const nRows = showProfiles ? Math.ceil(rows / nCols) : 1;
@@ -428,7 +440,7 @@
         const p = ((px + 0.5) / wfW) * rows;
         const ip = Math.min(rows - 1, Math.max(0, Math.floor(p)));
         const v = arr[ip * cols + ie];
-        const [r, g, b] = colorFor(v, lim);
+        const [r, g, b] = colorFor(v, vmin, vmax);
         const o = (py * wfW + px) * 4;
         img.data[o] = r;
         img.data[o + 1] = g;
@@ -461,8 +473,10 @@
     const bx = x0 + wfW + 8;
     for (let py = 0; py < wfH; py++) {
       const t = 1 - py / (wfH - 1);
-      const v = -lim + 2 * lim * t;
-      const [r, g, b] = colorFor(v, lim);
+      const v = t < 0.5
+        ? vmin + (t / 0.5) * (0 - vmin)
+        : 0 + ((t - 0.5) / 0.5) * (vmax - 0);
+      const [r, g, b] = colorFor(v, vmin, vmax);
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(bx, y0 + py, barW, 1);
     }
@@ -470,10 +484,10 @@
     ctx.strokeRect(bx, y0, barW, wfH);
     ctx.fillStyle = "#1c1915";
     ctx.textAlign = "left";
-    ctx.fillText(lim.toPrecision(2), bx + barW + 4, y0 + 10);
+    ctx.fillText(vmax.toPrecision(3), bx + barW + 4, y0 + 10);
     ctx.fillText("0", bx + barW + 4, y0 + wfH / 2);
-    ctx.fillText((-lim).toPrecision(2), bx + barW + 4, y0 + wfH);
-    ctx.fillText("path probability", bx - 4, y0 - 8);
+    ctx.fillText(vmin.toPrecision(3), bx + barW + 4, y0 + wfH);
+    ctx.fillText("log10(γ W) / −W", bx - 4, y0 - 8);
 
     if (!showProfiles) return canvas;
 
@@ -492,7 +506,7 @@
       ctx.fillStyle = "#6b6258";
       ctx.textAlign = "left";
       ctx.fillText("path " + (i + 1), cx, cy - 4);
-      const xMid = cx + cw * ((0 - (-lim)) / (2 * lim));
+      const xMid = xOf(0, vmin, vmax, cx, cw);
       ctx.strokeStyle = "#ccc4b6";
       ctx.beginPath();
       ctx.moveTo(xMid, cy);
@@ -503,7 +517,7 @@
       ctx.lineWidth = 1;
       for (let ie = 0; ie < cols; ie += Math.max(1, Math.floor(cols / 400))) {
         const v = arr[i * cols + ie];
-        const x = cx + cw * ((v - (-lim)) / (2 * lim));
+        const x = xOf(v, vmin, vmax, cx, cw);
         const y = cy + ch * (1 - ie / cols);
         if (ie === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
