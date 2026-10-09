@@ -95,11 +95,15 @@ def _paths_json(paths):
 def _translate_files(qbeta_path, gamma_path, names, e_max=None):
     result = run_translation([qbeta_path, gamma_path], e_max=e_max)
     arr = result["arr"]
+    lim = float(max(abs(arr.min()), abs(arr.max())))
+    if lim <= 0:
+        lim = 1.0
     buf = io.BytesIO()
     title = f"{names[0]} + {names[1]}"
     plot_ladder(
         arr, buf, show=False,
-        z_label="log₁₀(γ W / 10⁻⁸)  /  −W (Qβ)",
+        z_label="W × Iγ/100",
+        vmin=-lim, vmax=lim,
         title=title,
         verbose=False,
     )
